@@ -201,31 +201,23 @@ func toBool(a byte) bool {
 
 func ChooseDirection(currentFloor int, currentDir MotorDirection, orders [4][3]bool) MotorDirection {
 	if currentDir == MD_Up {
-		for f := currentFloor + 1; f < len(orders); f++ {
-			if hasOrdersAbove(f, orders) {
-				return MD_Up
-			}
-		}
-		if hasOrdersBelow(currentFloor, orders) {
-			return MD_Down
+		if hasOrdersAbove(currentFloor, orders){
+			return MD_Up
 		}
 	} else if currentDir == MD_Down {
-		for f := currentFloor - 1; f >= 0; f-- {
-			if hasOrdersBelow(f, orders) {
-				return MD_Down
-			}
-		}
-		if hasOrdersAbove(currentFloor, orders) {
-			return MD_Up
-		}
-	} else if currentDir == MD_Stop && !GetObstruction() {
-		if hasOrdersAbove(currentFloor, orders) {
-			return MD_Up
-		}
 		if hasOrdersBelow(currentFloor, orders) {
 			return MD_Down
 		}
 	}
+
+	if hasOrdersAbove(currentFloor, orders) {
+        return MD_Up
+    }
+    if hasOrdersBelow(currentFloor, orders) {
+        return MD_Down
+    }
+
+
 	return MD_Stop
 }
 
@@ -249,6 +241,15 @@ func hasOrdersBelow(floor int, orders [4][3]bool) bool {
 		}
 	}
 	return false
+}
+
+func hasOrdersAt(floor int, orders [4][3]bool) bool {
+    for btn := 0; btn < 3; btn++ {
+        if orders[floor][btn] {
+            return true
+        }
+    }
+    return false
 }
 
 func ShouldStop(currentFloor int, currentDir MotorDirection, orders [4][3]bool) bool {
@@ -290,6 +291,7 @@ func ControlElevator(currentFloor int, currentDir *MotorDirection, orders *[4][3
 	if ShouldStop(currentFloor, *currentDir, *orders) {
 		SetMotorDirection(MD_Stop)
 		ClearRequestsAtFloor(currentFloor, *currentDir, orders)
+		UpdateButtonLights(*orders)
 		SetDoorOpenLamp(true)
 		time.Sleep(3 * time.Second)
 		SetDoorOpenLamp(false)
