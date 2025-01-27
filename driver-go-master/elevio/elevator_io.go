@@ -1,27 +1,28 @@
 package elevio
 
-import "time"
-import "sync"
-import "net"
-import "fmt"
-
-
+import (
+	"fmt"
+	"net"
+	"sync"
+	"time"
+)
 
 const _pollRate = 20 * time.Millisecond
 
-var _initialized    bool = false
-var _numFloors      int = 4
-var _mtx            sync.Mutex
-var _conn           net.Conn
+var _initialized bool = false
+var _numFloors int = 4
+var _mtx sync.Mutex
+var _conn net.Conn
 
 type ElevatorState int
 
 const (
-    IDLE ElevatorState = iota
-    MOVING
-    DOOR_OPEN
-    STOPPED
+	IDLE ElevatorState = iota
+	MOVING
+	DOOR_OPEN
+	STOPPED
 )
+
 type MotorDirection int
 
 const (
@@ -43,8 +44,6 @@ type ButtonEvent struct {
 	Button ButtonType
 }
 
-
-
 func Init(addr string, numFloors int) {
 	if _initialized {
 		fmt.Println("Driver already initialized!")
@@ -59,8 +58,6 @@ func Init(addr string, numFloors int) {
 	}
 	_initialized = true
 }
-
-
 
 func SetMotorDirection(dir MotorDirection) {
 	write([4]byte{1, byte(dir), 0, 0})
@@ -81,8 +78,6 @@ func SetDoorOpenLamp(value bool) {
 func SetStopLamp(value bool) {
 	write([4]byte{5, toByte(value), 0, 0})
 }
-
-
 
 func PollButtons(receiver chan<- ButtonEvent) {
 	prev := make([][3]bool, _numFloors)
@@ -136,9 +131,6 @@ func PollObstructionSwitch(receiver chan<- bool) {
 	}
 }
 
-
-
-
 func GetButton(button ButtonType, floor int) bool {
 	a := read([4]byte{6, byte(button), byte(floor), 0})
 	return toBool(a[1])
@@ -163,32 +155,33 @@ func GetObstruction() bool {
 	return toBool(a[1])
 }
 
-
-
-
-
 func read(in [4]byte) [4]byte {
 	_mtx.Lock()
 	defer _mtx.Unlock()
-	
+
 	_, err := _conn.Write(in[:])
-	if err != nil { panic("Lost connection to Elevator Server") }
-	
+	if err != nil {
+		panic("Lost connection to Elevator Server")
+	}
+
 	var out [4]byte
 	_, err = _conn.Read(out[:])
-	if err != nil { panic("Lost connection to Elevator Server") }
-	
+	if err != nil {
+		panic("Lost connection to Elevator Server")
+	}
+
 	return out
 }
 
 func write(in [4]byte) {
 	_mtx.Lock()
 	defer _mtx.Unlock()
-	
-	_, err := _conn.Write(in[:])
-	if err != nil { panic("Lost connection to Elevator Server") }
-}
 
+	_, err := _conn.Write(in[:])
+	if err != nil {
+		panic("Lost connection to Elevator Server")
+	}
+}
 
 func toByte(a bool) byte {
 	var b byte = 0
@@ -207,115 +200,120 @@ func toBool(a byte) bool {
 }
 
 func ChooseDirection(currentFloor int, currentDir MotorDirection, orders [4][3]bool) MotorDirection {
-    if currentDir == MD_Up {
-        for f := currentFloor + 1; f < len(orders); f++ {
-            if hasOrdersAbove(f, orders) {
-                return MD_Up
-            }
-        }
-        if hasOrdersBelow(currentFloor, orders) {
-            return MD_Down
-        }
-    } else if currentDir == MD_Down {
-        for f := currentFloor - 1; f >= 0; f-- {
-            if hasOrdersBelow(f, orders) {
-                return MD_Down
-            }
-        }
-        if hasOrdersAbove(currentFloor, orders) {
-            return MD_Up
-        }
-    } else if currentDir == MD_Stop { return MD_Up
-
+	if currentDir == MD_Up {
+		for f := currentFloor + 1; f < len(orders); f++ {
+			if hasOrdersAbove(f, orders) {
+				return MD_Up
+			}
+		}
+		if hasOrdersBelow(currentFloor, orders) {
+			return MD_Down
+		}
+	} else if currentDir == MD_Down {
+		for f := currentFloor - 1; f >= 0; f-- {
+			if hasOrdersBelow(f, orders) {
+				return MD_Down
+			}
+		}
+		if hasOrdersAbove(currentFloor, orders) {
+			return MD_Up
+		}
+	} else if currentDir == MD_Stop && !GetObstruction() {
+		if hasOrdersAbove(currentFloor, orders) {
+			return MD_Up
+		}
+		if hasOrdersBelow(currentFloor, orders) {
+			return MD_Down
+		}
 	}
-    return MD_Stop
+	return MD_Stop
 }
 
 func hasOrdersAbove(floor int, orders [4][3]bool) bool {
-    for f := floor + 1; f < len(orders); f++ {
-        for btn := 0; btn < 3; btn++ {
-            if orders[f][btn] {
-                return true
-            }
-        }
-    }
-    return false
+	for f := floor + 1; f < len(orders); f++ {
+		for btn := 0; btn < 3; btn++ {
+			if orders[f][btn] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hasOrdersBelow(floor int, orders [4][3]bool) bool {
-    for f := 0; f < floor; f++ {
-        for btn := 0; btn < 3; btn++ {
-            if orders[f][btn] {
-                return true
-            }
-        }
-    }
-    return false
+	for f := 0; f < floor; f++ {
+		for btn := 0; btn < 3; btn++ {
+			if orders[f][btn] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func ShouldStop(currentFloor int, currentDir MotorDirection, orders [4][3]bool) bool {
-    if orders[currentFloor][BT_Cab] {
-        return true
-    }
-    if currentDir == MD_Up && orders[currentFloor][BT_HallUp] {
-        return true
-    }
-    if currentDir == MD_Down && orders[currentFloor][BT_HallDown] {
-        return true
-    }
-    if (currentDir == MD_Up && !hasOrdersAbove(currentFloor, orders)) ||
-       (currentDir == MD_Down && !hasOrdersBelow(currentFloor, orders)) {
-        return true
-    }
-    return false
+	if orders[currentFloor][BT_Cab] {
+		return true
+	}
+	if currentDir == MD_Up && orders[currentFloor][BT_HallUp] {
+		return true
+	}
+	if currentDir == MD_Down && orders[currentFloor][BT_HallDown] {
+		return true
+	}
+	if (currentDir == MD_Up && !hasOrdersAbove(currentFloor, orders)) ||
+		(currentDir == MD_Down && !hasOrdersBelow(currentFloor, orders)) {
+		return true
+	}
+	return false
 }
 
 func ClearRequestsAtFloor(floor int, currentDir MotorDirection, orders *[4][3]bool) {
-    orders[floor][BT_Cab] = false
-    if currentDir == MD_Up {
-        orders[floor][BT_HallUp] = false
-        if !hasOrdersAbove(floor, *orders) {
-            orders[floor][BT_HallDown] = false
-        }
-    } else if currentDir == MD_Down {
-        orders[floor][BT_HallDown] = false
-        if !hasOrdersBelow(floor, *orders) {
-            orders[floor][BT_HallUp] = false
-        }
-    } else {
-        orders[floor][BT_HallUp] = false
-        orders[floor][BT_HallDown] = false
-    }
+	orders[floor][BT_Cab] = false
+	if currentDir == MD_Up {
+		orders[floor][BT_HallUp] = false
+		if !hasOrdersAbove(floor, *orders) {
+			orders[floor][BT_HallDown] = false
+		}
+	} else if currentDir == MD_Down {
+		orders[floor][BT_HallDown] = false
+		if !hasOrdersBelow(floor, *orders) {
+			orders[floor][BT_HallUp] = false
+		}
+	} else {
+		orders[floor][BT_HallUp] = false
+		orders[floor][BT_HallDown] = false
+	}
 }
 
 func ControlElevator(currentFloor int, currentDir *MotorDirection, orders *[4][3]bool) {
-    if ShouldStop(currentFloor, *currentDir, *orders) {
-        SetMotorDirection(MD_Stop)
-        ClearRequestsAtFloor(currentFloor, *currentDir, orders)
-        SetDoorOpenLamp(true)
-        time.Sleep(3 * time.Second)
-        SetDoorOpenLamp(false)
-        *currentDir = ChooseDirection(currentFloor, *currentDir, *orders)
-        SetMotorDirection(*currentDir)
-    }
+	if ShouldStop(currentFloor, *currentDir, *orders) {
+		SetMotorDirection(MD_Stop)
+		ClearRequestsAtFloor(currentFloor, *currentDir, orders)
+		SetDoorOpenLamp(true)
+		time.Sleep(3 * time.Second)
+		SetDoorOpenLamp(false)
+		*currentDir = ChooseDirection(currentFloor, *currentDir, *orders)
+		SetMotorDirection(*currentDir)
+	}
 }
 
 func UpdateButtonLights(orders [4][3]bool) {
-    for floor := 0; floor < len(orders); floor++ {
-        for btn := 0; btn < 3; btn++ {
-            SetButtonLamp(ButtonType(btn), floor, orders[floor][btn])
-        }
-    }
+	for floor := 0; floor < len(orders); floor++ {
+		for btn := 0; btn < 3; btn++ {
+			SetButtonLamp(ButtonType(btn), floor, orders[floor][btn])
+		}
+	}
 }
 
 var Orders [4][3]bool
 
 func AddOrder(floor int, btn ButtonType) {
-    Orders[floor][btn] = true
-    UpdateButtonLights(Orders)
+	Orders[floor][btn] = true
+	UpdateButtonLights(Orders)
 }
 
 func RemoveOrder(floor int, btn ButtonType) {
-    Orders[floor][btn] = false
-    SetButtonLamp(btn, floor, false)
+	Orders[floor][btn] = false
+	SetButtonLamp(btn, floor, false)
 }

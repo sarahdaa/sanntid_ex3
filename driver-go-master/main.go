@@ -71,7 +71,7 @@ func main() {
         }
     
         elevio.SetStopLamp(true)
-        time.Sleep(2 * time.Second)
+        time.Sleep(3 * time.Second)
         elevio.SetStopLamp(false)
     
         currentDir = elevio.ChooseDirection(currentFloor, currentDir, elevio.Orders)
